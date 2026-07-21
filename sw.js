@@ -1,4 +1,4 @@
-const CACHE_VERSION = '7a01a553de';
+const CACHE_VERSION = '2f1b6cee76';
 const CACHE = 'yumai-' + CACHE_VERSION;
 const ASSETS = [
   './',
