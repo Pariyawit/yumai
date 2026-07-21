@@ -91,6 +91,23 @@ main{flex:1;position:relative;overflow:hidden}
 .tools{display:flex;gap:14px;font-size:12px;color:var(--dim)}
 .tools button{background:none;border:none;color:var(--dim);font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:6px 0}
 .tools button:hover{color:var(--ink)}
+/* REVIEW */
+.tab .tshort{display:none}
+#rvPicker{width:min(560px,94vw);display:flex;flex-direction:column;gap:10px}
+#rvWeeks{display:flex;flex-direction:column;gap:8px}
+.wk{display:flex;align-items:center;gap:10px;padding:13px 15px;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:.15s;text-align:left}
+.wk:hover{border-color:var(--accent)}
+.wk i{width:9px;height:9px;border-radius:50%;flex:none}
+.wk .wkdate{font-weight:600;flex:none}
+.wk .wktheme{color:var(--dim);font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wk .wkcount{color:var(--dim);font-size:11px;flex:none;text-align:right}
+.prompt.sent{font-size:19px;line-height:1.7;font-weight:500}
+.py-sent{font-size:16px;line-height:1.6}
+.hint-en{font-size:13px;color:var(--dim);margin-top:8px}
+.bd{font-size:13px;color:var(--dim);margin-top:10px;line-height:1.5}
+.connects{font-size:12px;color:var(--dim);margin-top:8px}
+.connects b{color:var(--accent2);font-weight:600}
+.hit{color:var(--accent)}
 /* ---------- mobile ---------- */
 @media (max-width:720px){
   :root{--navh:calc(58px + env(safe-area-inset-bottom))}
@@ -100,6 +117,8 @@ main{flex:1;position:relative;overflow:hidden}
   .tabs{position:fixed;left:0;right:0;bottom:0;margin:0;gap:0;background:var(--panel);border-top:1px solid var(--line);z-index:20;padding-bottom:env(safe-area-inset-bottom)}
   .tab{flex:1;border-radius:0;padding:13px 0;font-size:13px;min-height:44px}
   .tab.on{border-color:transparent;background:var(--panel2)}
+  .tab .tfull{display:none}
+  .tab .tshort{display:inline}
   main{margin-bottom:var(--navh)}
   .side{display:none}
   #mTools{display:block}
@@ -118,9 +137,10 @@ main{flex:1;position:relative;overflow:hidden}
 <header>
   <h1>语脉 Yǔmài <span>· your Chinese, mapped</span></h1>
   <div class="tabs">
-    <button class="tab on" data-v="map">🕸 Word map</button>
+    <button class="tab on" data-v="map">🕸 <span class="tfull">Word map</span><span class="tshort">Map</span></button>
     <button class="tab" data-v="speak">🗣 Speak</button>
     <button class="tab" data-v="tone">🎵 Tones</button>
+    <button class="tab" data-v="review">📅 Review</button>
   </div>
 </header>
 <main>
@@ -224,6 +244,44 @@ main{flex:1;position:relative;overflow:hidden}
       </div>
     </div>
   </section>
+  <!-- REVIEW -->
+  <section class="view" id="v-review">
+    <div class="center">
+      <div id="rvPicker">
+        <div class="kick">pick a lesson week to review</div>
+        <div id="rvWeeks"></div>
+      </div>
+      <div id="rvSession" style="display:none;flex-direction:column;align-items:center;gap:18px">
+        <div class="progress"><span id="rvProg"></span></div>
+        <div class="card">
+          <div class="kick" id="rvKick">—</div>
+          <div class="prompt" id="rvPrompt">—</div>
+          <div class="hint-en" id="rvHint" style="display:none"></div>
+          <div id="rvAnswer" style="display:none">
+            <div class="hz-big" id="rvHz"></div>
+            <div class="py-big" id="rvPy"></div>
+            <div class="reveal-en" id="rvEn"></div>
+            <div class="bd" id="rvBd"></div>
+            <div class="connects" id="rvConn"></div>
+          </div>
+        </div>
+        <div class="btnrow" id="rvRevealRow">
+          <button class="btn primary" id="rvReveal">Reveal</button>
+          <button class="btn" id="rvHear">🔊 Hear it</button>
+        </div>
+        <div class="btnrow grade" id="rvGrade">
+          <button class="btn g1" data-g="1">Again</button>
+          <button class="btn g2" data-g="2">Got it</button>
+          <button class="btn g3" data-g="3">Easy</button>
+        </div>
+        <div class="btnrow" id="rvDoneRow" style="display:none">
+          <button class="btn primary" id="rvAgain">Review again</button>
+          <button class="btn" id="rvPick">Pick another week</button>
+        </div>
+        <div class="tools"><button id="rvQuit">← back to weeks</button></div>
+      </div>
+    </div>
+  </section>
 </main>
 </div>
 <script src="vocab.js"></script>
@@ -271,12 +329,14 @@ function neighborsOf(id){
 }
 
 /* ========================================================= TABS */
+let srsDirty=false; // set when Review grades words, so Speak rebuilds its queue
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');
   document.getElementById('v-'+t.dataset.v).classList.add('on');
   if(t.dataset.v==='map')ticksKick();
+  if(t.dataset.v==='speak'&&srsDirty){srsDirty=false;buildQueue();spNext();}
 });
 
 /* ========================================================= MAP */
@@ -452,6 +512,13 @@ function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2
 function today(){return fmtDate(new Date());}
 const GAP=[0,1,3,7,14,30]; // days until next review, per box
 const SOLID_BOX=3;
+function gradeWord(w,g){ // g: 1=Again, 2=Got it, 3=Easy
+  const s=srs[w.hanzi]||{box:0};
+  if(g===1)s.box=0;else s.box=Math.min(5,s.box+(g===3?2:1));
+  const d=new Date();d.setDate(d.getDate()+GAP[s.box]);
+  s.due=fmtDate(d);
+  srs[w.hanzi]=s;srsSave();
+}
 
 let spQueue=[],spCur=null,spSeen=0,spAhead=false;
 function buildQueue(){
@@ -502,11 +569,7 @@ document.getElementById('spReveal').onclick=()=>{
 document.getElementById('spHear').onclick=()=>{if(spCur)say(spCur.hanzi);};
 document.querySelectorAll('#spGrade .btn').forEach(b=>b.onclick=()=>{
   const g=+b.dataset.g,w=spCur;if(!w)return;
-  const s=srs[w.hanzi]||{box:0};
-  if(g===1)s.box=0;else s.box=Math.min(5,s.box+(g===3?2:1));
-  const d=new Date();d.setDate(d.getDate()+GAP[s.box]);
-  s.due=fmtDate(d);
-  srs[w.hanzi]=s;srsSave();
+  gradeWord(w,g);
   if(g===1)spQueue.push(w); // see it again this session
   spSeen++;spNext();
 });
@@ -568,6 +631,118 @@ document.getElementById('tnReveal').onclick=()=>{
 document.getElementById('tnHear').onclick=()=>say(tnCur.hanzi);
 document.getElementById('tnNext').onclick=()=>{tnI++;tnShow();};
 tnShow();
+
+/* ========================================================= WEEKLY REVIEW */
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtShort(iso){const[y,m,d]=iso.split('-');return MON[+m-1]+' '+(+d);}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+const WEEKS=[...new Set(VOCAB.map(w=>w.date))].sort().reverse().map(date=>{
+  const words=VOCAB.filter(w=>w.date===date);
+  return{date,theme:words[0].theme,words};
+});
+
+function clozeOf(w){
+  if(!w.example_zh)return null;
+  if(/[…()（）]/.test(w.hanzi))return null;              // pattern entries like 跟…有关系
+  if(!w.example_zh.includes(w.hanzi))return null;        // separable/variant use → plain card only
+  return w.example_zh.split(w.hanzi).join('＿'.repeat([...w.hanzi].length));
+}
+function connectsHTML(w){
+  const others=neighborsOf(w.id).filter(n=>VOCAB[n.id].date!==w.date).slice(0,2);
+  if(!others.length)return'';
+  return others.map(n=>{const o=VOCAB[n.id];return`shares <b>${n.via}</b> with ${o.hanzi} (${fmtShort(o.date)})`;}).join(' · ');
+}
+
+const rvPicker=document.getElementById('rvPicker'),rvSession=document.getElementById('rvSession');
+document.getElementById('rvWeeks').innerHTML=WEEKS.map((wk,i)=>{
+  const nCloze=wk.words.filter(clozeOf).length;
+  return`<button class="wk" data-i="${i}">
+    <i style="background:${themeColor[wk.theme]}"></i>
+    <span class="wkdate">${fmtShort(wk.date)}</span>
+    <span class="wktheme">${wk.theme}</span>
+    <span class="wkcount">${wk.words.length} words${nCloze?` · ${nCloze} with sentences`:''}</span>
+  </button>`;
+}).join('');
+document.querySelectorAll('.wk').forEach(b=>b.onclick=()=>rvStart(WEEKS[+b.dataset.i]));
+
+let rv=null; // {week, queue:[{w,stage}], cur, done, total, graded:Set}
+function rvStart(week){
+  const A=shuffle(week.words.slice()).map(w=>({w,stage:'A'}));
+  const B=week.words.filter(w=>clozeOf(w)).map(w=>({w,stage:'B'}));
+  rv={week,queue:A.concat(B),cur:null,done:0,total:A.length+B.length,graded:new Set()};
+  rvPicker.style.display='none';rvSession.style.display='flex';
+  rvNext();
+}
+function rvShowPicker(){rv=null;rvSession.style.display='none';rvPicker.style.display='flex';}
+function rvNext(){
+  document.getElementById('rvAnswer').style.display='none';
+  document.getElementById('rvGrade').style.display='none';
+  if(!rv.queue.length){
+    rv.cur=null;
+    document.getElementById('rvKick').textContent='week reviewed';
+    document.getElementById('rvPrompt').className='prompt';
+    document.getElementById('rvPrompt').textContent=`🎉 ${rv.week.theme} — done!`;
+    document.getElementById('rvHint').style.display='none';
+    document.getElementById('rvRevealRow').style.display='none';
+    document.getElementById('rvDoneRow').style.display='flex';
+    document.getElementById('rvProg').textContent=rv.done+' cards reviewed';
+    return;
+  }
+  rv.cur=rv.queue.shift();
+  const{w,stage}=rv.cur,prompt=document.getElementById('rvPrompt'),hint=document.getElementById('rvHint');
+  if(stage==='A'){
+    document.getElementById('rvKick').textContent='Stage A · say it in Chinese';
+    prompt.className='prompt';prompt.textContent=w.english;
+    hint.style.display='none';
+  }else{
+    document.getElementById('rvKick').textContent='Stage B · fill the blank';
+    prompt.className='prompt sent';prompt.textContent=clozeOf(w);
+    hint.textContent='('+w.english+')';hint.style.display='block';
+  }
+  document.getElementById('rvRevealRow').style.display='flex';
+  document.getElementById('rvDoneRow').style.display='none';
+  document.getElementById('rvProg').textContent=`${rv.done+1} / ${rv.total} · Stage ${stage} · ${stage==='A'?'recall':'in context'}`;
+}
+document.getElementById('rvReveal').onclick=()=>{
+  if(!rv||!rv.cur)return;
+  const{w,stage}=rv.cur;
+  const hz=document.getElementById('rvHz'),py=document.getElementById('rvPy');
+  if(stage==='A'){
+    hz.style.display='block';hz.textContent=w.hanzi;
+    py.className='py-big';py.innerHTML=colorPinyin(w.pinyin);
+    document.getElementById('rvEn').textContent='';
+    say(w.hanzi);
+  }else{
+    document.getElementById('rvPrompt').innerHTML=w.example_zh.split(w.hanzi).join(`<span class="hit">${w.hanzi}</span>`);
+    hz.style.display='none';
+    py.className='py-big py-sent';py.innerHTML=colorPinyin(w.example_pinyin||w.pinyin);
+    document.getElementById('rvEn').textContent=w.hanzi+' — '+w.english;
+    say(w.example_zh);
+  }
+  document.getElementById('rvBd').textContent=w.breakdown||'';
+  document.getElementById('rvConn').innerHTML=connectsHTML(w);
+  document.getElementById('rvAnswer').style.display='block';
+  document.getElementById('rvRevealRow').style.display='none';
+  document.getElementById('rvGrade').style.display='flex';
+};
+document.getElementById('rvHear').onclick=()=>{
+  if(!rv||!rv.cur)return;
+  const{w,stage}=rv.cur;
+  say(stage==='B'&&w.example_zh?w.example_zh:w.hanzi);
+};
+document.querySelectorAll('#rvGrade .btn').forEach(b=>b.onclick=()=>{
+  const g=+b.dataset.g;if(!rv||!rv.cur)return;
+  const{w,stage}=rv.cur;
+  // one SRS promotion per word per session; demotions (Again) always count
+  if(g===1||!rv.graded.has(w.hanzi)){gradeWord(w,g);srsDirty=true;}
+  rv.graded.add(w.hanzi);
+  if(g===1){rv.queue.push({w,stage});rv.total++;}
+  rv.done++;rvNext();
+});
+document.getElementById('rvAgain').onclick=()=>rvStart(rv.week);
+document.getElementById('rvPick').onclick=rvShowPicker;
+document.getElementById('rvQuit').onclick=rvShowPicker;
 
 /* ========================================================= PWA */
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){

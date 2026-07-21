@@ -17,6 +17,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CSV_PATH = HERE.parent / "vocab_bank.csv"
+HOMEWORK_DIR = HERE.parent / "homework"
 VOCAB_JS = HERE / "vocab.js"
 SW_JS = HERE / "sw.js"
 
@@ -30,21 +31,49 @@ def theme_from_source(source: str) -> str:
     return " ".join(words) or stem
 
 
+def load_homework() -> dict:
+    """Map (class_date, hanzi) -> {example_zh, example_pinyin, breakdown} from homework JSONs."""
+    extras = {}
+    for path in sorted(HOMEWORK_DIR.glob("*_content.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        date = data.get("class_date") or path.name[:10]
+        for w in data.get("new_words", []):
+            fields = {k: w[k].strip() for k in ("example_zh", "example_pinyin", "breakdown") if w.get(k, "").strip()}
+            if fields:
+                extras[(date, w["hanzi"].strip())] = fields
+    return extras
+
+
 def main() -> None:
+    extras = load_homework() if HOMEWORK_DIR.is_dir() else {}
+    n_files = len(list(HOMEWORK_DIR.glob("*_content.json"))) if HOMEWORK_DIR.is_dir() else 0
+    unmatched = set(extras)
+
     rows = []
     with open(CSV_PATH, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            rows.append({
+            entry = {
                 "hanzi": row["hanzi"].strip(),
                 "pinyin": row["pinyin"].strip(),
                 "english": row["english"].strip(),
                 "date": row["date"].strip(),
                 "theme": theme_from_source(row["source"].strip()),
-            })
+            }
+            key = (entry["date"], entry["hanzi"])
+            if key in extras:
+                entry.update(extras[key])
+                unmatched.discard(key)
+            rows.append(entry)
+
+    if unmatched:
+        print(f"Warning: {len(unmatched)} homework words not in vocab_bank.csv: "
+              + ", ".join(f"{h} ({d})" for d, h in sorted(unmatched)))
 
     payload = "const VOCAB = " + json.dumps(rows, ensure_ascii=False) + ";\n"
     VOCAB_JS.write_text(payload, encoding="utf-8")
-    print(f"Wrote {VOCAB_JS.name}: {len(rows)} words, {len({r['theme'] for r in rows})} themes")
+    enriched = sum(1 for r in rows if "example_zh" in r or "breakdown" in r)
+    print(f"Wrote {VOCAB_JS.name}: {len(rows)} words, {len({r['theme'] for r in rows})} themes, "
+          f"{enriched} enriched from {n_files} homework files")
 
     if SW_JS.exists():
         version = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:10]
